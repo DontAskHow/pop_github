@@ -1,0 +1,291 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "POP MVP API",
+    "version": "1.0.0",
+    "description": "Excerpt covering public POP endpoints and SSE event agent_state_update"
+  },
+  "servers": [
+    { "url": "https://api.pop.example/v1", "description": "POP Public API" }
+  ],
+  "paths": {
+    "/pops": {
+      "post": {
+        "summary": "Submit a POP for the active prompt",
+        "operationId": "createPop",
+        "security": [{ "userAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PopSubmission" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["accepted"] },
+                    "region_assignments": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RegionId" }
+                    }
+                  },
+                  "required": ["status", "region_assignments"]
+                }
+              }
+            }
+          },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/agent-states": {
+      "get": {
+        "summary": "Fetch collective summaries for regions",
+        "operationId": "getAgentStates",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/RegionId" },
+              "minItems": 1
+            },
+            "style": "form",
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collective agent states",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/CollectiveAgentState" }
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "cached_at": { "type": "string", "format": "date-time" },
+                        "ttl_seconds": { "type": "integer", "minimum": 0 },
+                        "source": { "type": "string", "enum": ["cache", "fresh"] },
+                        "partial_results": { "type": "boolean" }
+                      },
+                      "required": ["cached_at", "ttl_seconds", "source"]
+                    }
+                  },
+                  "required": ["agents", "metadata"]
+                }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "Subscribe to real-time updates",
+        "operationId": "subscribeEvents",
+        "description": "Server-Sent Events stream carrying agent_state_update messages",
+        "parameters": [
+          {
+            "name": "regions",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/RegionId" }
+            },
+            "style": "form",
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event": { "type": "string", "const": "agent_state_update" },
+                    "data": { "$ref": "#/components/schemas/AgentStateUpdateEvent" }
+                  },
+                  "required": ["event", "data"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RegionId": {
+        "type": "string",
+        "pattern": "^(city|state|country):[A-Z]{2}(:[a-z0-9-]+)*$"
+      },
+      "PopSubmission": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "string", "format": "uuid" },
+          "prompt_id": { "type": "string" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "lat": { "type": "number" },
+          "lng": { "type": "number" },
+          "city": { "type": "string" },
+          "state": { "type": "string" },
+          "country": { "type": "string", "minLength": 2, "maxLength": 2 },
+          "device_locale": { "type": "string" }
+        },
+        "required": ["account_id", "prompt_id", "text", "country"],
+        "additionalProperties": false
+      },
+      "CollectiveAgentState": {
+        "type": "object",
+        "properties": {
+          "id": { "$ref": "#/components/schemas/RegionId" },
+          "level": { "type": "string", "enum": ["City", "State", "Country"] },
+          "prompt_id": { "type": "string" },
+          "collective_summary": {
+            "type": "string",
+            "minLength": 50,
+            "maxLength": 1200
+          },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "x_meta": {
+            "type": "object",
+            "properties": {
+              "pop_count": { "type": "integer", "minimum": 0 },
+              "weight_digest": {
+                "type": "object",
+                "properties": {
+                  "mean": { "type": "number" },
+                  "stddev": { "type": "number" },
+                  "gini": { "type": "number" },
+                  "topk": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "pop_public_id": { "type": "string" },
+                        "weight_pct": { "type": "number" }
+                      },
+                      "required": ["pop_public_id", "weight_pct"],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "level", "prompt_id", "collective_summary", "updated_at"],
+        "additionalProperties": false
+      },
+      "AgentStateUpdateEvent": {
+        "type": "object",
+        "properties": {
+          "region_id": { "$ref": "#/components/schemas/RegionId" },
+          "agent_state": { "$ref": "#/components/schemas/CollectiveAgentState" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "change_type": {
+            "type": "string",
+            "enum": ["created", "updated", "refreshed"]
+          },
+          "trigger_reason": {
+            "type": "string",
+            "enum": ["new_pop", "scheduled_refresh", "manual_refresh"]
+          }
+        },
+        "required": ["region_id", "agent_state", "updated_at", "change_type", "trigger_reason"],
+        "additionalProperties": false
+      }
+    },
+    "responses": {
+      "Conflict": {
+        "description": "Submission conflicts with existing POP allowance",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" },
+                "trace_id": { "type": "string" }
+              },
+              "required": ["error", "trace_id"]
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" },
+                "field_errors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": { "type": "string" },
+                      "reason": { "type": "string" }
+                    },
+                    "required": ["field", "reason"],
+                    "additionalProperties": false
+                  }
+                },
+                "trace_id": { "type": "string" }
+              },
+              "required": ["error", "field_errors", "trace_id"]
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Partial or degraded results",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" },
+                "partial_results": { "type": "boolean" },
+                "trace_id": { "type": "string" }
+              },
+              "required": ["error", "partial_results", "trace_id"]
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "userAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
