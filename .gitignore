@@ -1,0 +1,8 @@
+node_modules/
+.cache/
+.turbo/
+.secrets/
+.specify/bin/
+*.tgz
+**/dist/
+**/*.tsbuildinfo

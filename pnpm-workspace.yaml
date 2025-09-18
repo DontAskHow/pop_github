@@ -1,0 +1,4 @@
+packages:
+  - apps/pop-api
+  - apps/engine
+  - packages/*
