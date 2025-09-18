@@ -6,9 +6,9 @@ get_current_branch() { git rev-parse --abbrev-ref HEAD; }
 
 check_feature_branch() {
     local branch="$1"
-    if [[ ! "$branch" =~ ^[0-9]{3}- ]]; then
+    if [[ ! "$branch" =~ ^([0-9]{3}|m[0-9]+|t[0-9]+)- ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name" >&2
+        echo "Feature branches should be named like: 001-feature-name, m1-scope, or t42-task" >&2
         return 1
     fi; return 0
 }

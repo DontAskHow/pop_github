@@ -1,0 +1,3 @@
+.secrets/
+.specify/bin/
+*.tgz
